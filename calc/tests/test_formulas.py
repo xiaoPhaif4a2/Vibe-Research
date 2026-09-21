@@ -108,6 +108,27 @@ def test_to_yuan_units_and_missing():
             formulas.to_yuan(*bad)
 
 
+def test_minimum_purchase_batch_uses_board_lot_and_principal():
+    out = formulas.minimum_purchase_batch([
+        {"symbol": "600000", "name": "甲", "price": 12.5, "minimum_shares": 100, "evidence_id": "ev-aaaaaa"},
+        {"symbol": "688001", "name": "乙", "price": 60, "minimum_shares": 200, "evidence_id": "ev-bbbbbb"},
+    ], 10_000, "元")
+    assert_contract(out)
+    assert out["status"] == "ok"
+    assert out["value"] == 1
+    first, second = out["details"]["results"]
+    assert first["minimum_amount_yuan"] == 1250
+    assert first["capital_ratio"] == 0.125
+    assert first["affordable"] is True
+    assert second["minimum_amount_yuan"] == 12000
+    assert second["affordable"] is False
+
+
+def test_minimum_purchase_batch_rejects_bad_inputs():
+    assert formulas.minimum_purchase_batch([], 0, "元")["status"] == "not_meaningful"
+    assert formulas.minimum_purchase_batch([{"symbol": "600000", "price": 10, "minimum_shares": 0}], 10000, "元")["status"] == "error"
+
+
 def test_bool_nan_inf_rejected_as_error_not_exception():
     for out in (formulas.forward_pe(True, 2), formulas.forward_pe(float("nan"), 2), formulas.peg(float("inf"), 0.2),
                 formulas.forward_pe("abc", 2), formulas.consensus_dispersion(None, 1, 2)):

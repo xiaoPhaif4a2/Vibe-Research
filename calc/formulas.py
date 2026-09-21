@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from typing import Any, Iterable, Optional
 
-CALC_VERSION = "0.3.2"  # 0.3.2:output 增 display 展示字符串(cli 层附加,公式层不变);0.3.1:ratio;0.3.0:新增 technical_indicators / chip_distribution 与 history_json 序列输入
+CALC_VERSION = "0.4.0"  # 0.4.0:新增 A 股最低买入金额批量测算;0.3.2:output 增 display 展示字符串(cli 层附加)
 
 UNIT_TO_YUAN = {"元": 1.0, "万元": 1e4, "亿元": 1e8}
 MAX_ABS_CAGR = 5.0       # 年化增速 |x| > 500% 视为百分数误传
@@ -186,6 +186,57 @@ def ratio(numerator, denominator, label: str = "ratio", unit_in: str = "") -> di
     if d <= 0:
         return _res("not_meaningful", unit="小数", reason=f"{label}:分母 ≤ 0,比率无意义", numerator=n, denominator=d, unit_in=unit_in)
     return _res("ok", n / d, "小数", numerator=n, denominator=d, label=label, unit_in=unit_in)
+
+
+def minimum_purchase_batch(items, principal, principal_unit: str = "元") -> dict:
+    """按证据价格与交易所最低申报数量，批量计算最低买入金额和本金占比。
+
+    items 每项必须含 symbol / price / minimum_shares，可附 evidence_id / name。
+    不含佣金、过户费等交易费用；本函数只做可负担性硬筛选，不产生投资建议。
+    """
+    try:
+        principal_yuan = to_yuan(principal, principal_unit, "principal")
+    except CalcInputError as ex:
+        return _err(str(ex))
+    if principal_yuan <= 0:
+        return _res("not_meaningful", unit="只", reason="本金必须大于 0", principal_yuan=principal_yuan)
+    if not isinstance(items, list):
+        return _err("items 必须是数组")
+    if len(items) > 1000:
+        return _err("items 最多 1000 项")
+
+    results = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            return _err(f"items[{index}] 必须是对象")
+        symbol = str(item.get("symbol") or "").strip()
+        if not symbol:
+            return _err(f"items[{index}].symbol 缺失")
+        try:
+            price = _num(item.get("price"), f"items[{index}].price")
+            shares_raw = item.get("minimum_shares")
+            if isinstance(shares_raw, bool) or not isinstance(shares_raw, int) or shares_raw <= 0 or shares_raw > 1_000_000:
+                raise CalcInputError(f"items[{index}].minimum_shares 必须是 1..1000000 的整数")
+            if price <= 0:
+                raise CalcInputError(f"items[{index}].price 必须大于 0")
+            amount_yuan = _finite(price * shares_raw, f"items[{index}] 最低买入金额")
+            capital_ratio = _finite(amount_yuan / principal_yuan, f"items[{index}] 本金占比")
+        except CalcInputError as ex:
+            return _err(str(ex))
+        results.append({
+            "symbol": symbol,
+            "name": str(item.get("name") or ""),
+            "evidence_id": str(item.get("evidence_id") or ""),
+            "price": price,
+            "minimum_shares": shares_raw,
+            "minimum_amount_yuan": amount_yuan,
+            "capital_ratio": capital_ratio,
+            "affordable": amount_yuan <= principal_yuan,
+            "minimum_amount": _res("ok", amount_yuan, "元"),
+            "capital_share": _res("ok", capital_ratio, "小数"),
+        })
+    return _res("ok", sum(1 for r in results if r["affordable"]), "只",
+                principal_yuan=principal_yuan, excludes_fees=True, results=results)
 
 
 # ---------------------------------------------------------------- 估值合成

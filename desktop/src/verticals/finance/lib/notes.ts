@@ -39,6 +39,7 @@ const KIND_TO_CATEGORY: Record<string, string> = {
   多空辩论: "debate",
   反思审计: "audit",
   回测: "backtest",
+  选股报告: "selection",
 };
 
 function toCategory(kind: string): string {

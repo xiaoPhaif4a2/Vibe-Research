@@ -17,6 +17,7 @@ const KIND_COLOR: Record<string, string> = {
   "问 Agent": "bg-success/15 text-success",
   多空辩论: "bg-sky-500/15 text-sky-400",
   反思审计: "bg-violet-500/15 text-violet-400",
+  选股报告: "bg-amber-500/15 text-amber-400",
 };
 
 export function Notes() {

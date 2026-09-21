@@ -49,6 +49,7 @@ FUNCTIONS = {
     "forward_cagr": formulas.forward_cagr,
     "growth_rate": formulas.growth_rate,
     "ratio": formulas.ratio,
+    "minimum_purchase_batch": formulas.minimum_purchase_batch,
     "peg": formulas.peg,
     "pe_digestion_years": formulas.pe_digestion_years,
     "pe_digestion_scenarios": formulas.pe_digestion_scenarios,

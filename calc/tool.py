@@ -39,6 +39,7 @@ ALLOWED = {
     "percentile_rank",
     "consensus_dispersion",
     "forward_vs_ttm_judgement",
+    "minimum_purchase_batch",
 }
 
 

@@ -447,13 +447,14 @@ export const backend = {
    *    而 Core 的页面查询取的是全市场约 500 个）。这两样**页面上都看不出异常**。
    *    ⇒ 业务日、每块状态、跨日标记由 Core 一次算好随信封下发。
    */
-  page: (query: string, opts: { symbol?: string; refresh?: boolean; blockArgs?: Record<string, Record<string, unknown>> } = {}) =>
+  page: (query: string, opts: { symbol?: string; refresh?: boolean; blockArgs?: Record<string, Record<string, unknown>>; contextArgs?: Record<string, unknown> } = {}) =>
     call<PageResult>(`/page/${encodeURIComponent(query)}`, {
       method: "POST",
       body: JSON.stringify({
         ...(opts.symbol ? { symbol: opts.symbol } : {}),
         ...(opts.refresh ? { refresh: true } : {}),
         ...(opts.blockArgs ? { blockArgs: opts.blockArgs } : {}),
+        ...(opts.contextArgs ? { contextArgs: opts.contextArgs } : {}),
       }),
     }),
 
@@ -584,6 +585,7 @@ export interface PageBlock {
   status: "ok" | "partial" | "failed" | "missing";
   fetched_at: string | null;
   cached?: boolean;
+  archived?: boolean;
   envelope: { status?: string; evidence?: unknown[]; extra?: Record<string, unknown>; degraded?: string } & Record<string, unknown>;
 }
 
@@ -600,6 +602,11 @@ export interface PageContext {
   review_date?: string;
   review_reason?: string;
   intraday?: boolean;
+  latest_review_date?: string;
+  selected_date?: boolean;
+  is_historical?: boolean;
+  archive_ready?: boolean;
+  archive_error?: string;
 }
 
 export interface PageResult {

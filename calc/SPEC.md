@@ -1,6 +1,6 @@
 # calc 函数契约(SPEC)
 
-口径来源:AGENTS.md §3(R6.5)。本文件是实现规格;AGENTS.md 只定口径与判读。版本:`CALC_VERSION = 0.3.2`(formulas.py;0.3.0 新增技术指标 / 筹码分布与 `history_json` 序列输入;0.3.1 新增通用比率 `ratio`)。
+口径来源:AGENTS.md §3(R6.5)。本文件是实现规格;AGENTS.md 只定口径与判读。版本:`CALC_VERSION = 0.4.0`(formulas.py;0.4.0 新增 A 股最低买入金额批量测算;0.3.2 新增确定性展示字符串)。
 
 ## 0. 通用约定
 
@@ -32,6 +32,9 @@
 | `forward_cagr(eps_t, eps_t_plus_n, years=2)` | (EPS[T+n] ÷ EPS[T])^(1/n) − 1 | 元/股;years 1..10 整数 | 任一 EPS ≤ 0(跨零) | years 非法 / 缺失 |
 | `growth_rate(current, base, label)` | current ÷ base − 1 | 同单位 | base ≤ 0 | 缺失 / 非数 |
 | `ratio(numerator, denominator, label, unit_in)` | numerator ÷ denominator(毛利率 / 费用率 / 负债率 / 占比等同单位两数之比;0.3.1 新增,不做单位换算,unit_in 只留痕) | 同单位 | denominator ≤ 0 | 缺失 / 非数 |
+| `minimum_purchase_batch(items, principal, principal_unit)` | 每项价格 × 交易所最低申报数量，并与本金比较；同时返回本金占比 | 价格元/股、数量股、本金金额 | 本金 ≤ 0 | 缺失 / 单位未知 / 价格或数量非法 / 溢出 |
+
+`minimum_purchase_batch` 最多接受 1000 项，`minimum_shares` 为 1..1000000 的整数。每项输出原始金额、本金占比、是否可负担，以及可直接展示的嵌套结果；测算不含佣金、过户费等交易费用。
 | `peg(pe, cagr)` | PE ÷ (CAGR × 100) | 倍、小数 | PE ≤ 0;CAGR ≤ 0 | |cagr| > 5 |
 | `pe_digestion_years(pe, cagr, anchor)` | ln(PE ÷ 锚) ÷ ln(1 + CAGR);**PE ≤ 锚 → ok 0 年,details.below_anchor=true** | 倍、小数、倍 | PE ≤ 0;CAGR ≤ 0(且 PE > 锚) | 锚 ≤ 0;|cagr| > 5 |
 | `pe_digestion_scenarios(pe, cagr)` | 四锚 {景气延续 30, 中性减速 25, 周期重定级_上沿 22, 周期重定级_下沿 18} 各算一次 | 同上 | 全部无意义 | 任一情景 error |

@@ -54,7 +54,7 @@ export const FINANCE_ENUM_LABELS: Record<string, string> = {
   pending: "待判", met: "已达成", broken: "已触发", dropped: "已放弃",
   open: "待办", done: "已完成",
   review: "复盘", highlight: "今日要点", ask: "问 Agent", debate: "多空辩论", audit: "反思审计",
-  backtest: "回测",
+  backtest: "回测", selection: "选股报告",
 };
 
 export const FINANCE_LEDGER_KINDS: Record<string, LedgerKindDef> = {
@@ -158,7 +158,7 @@ export const FINANCE_LEDGER_KINDS: Record<string, LedgerKindDef> = {
     label: "研究记录",
     properties: {
       symbol: SYMBOL,
-      category: { type: "string", enum: ["review", "highlight", "ask", "debate", "audit", "backtest"] },
+      category: { type: "string", enum: ["review", "highlight", "ask", "debate", "audit", "backtest", "selection"] },
       title: NONEMPTY(160),
       /** markdown 正文；回测 / 多空辩论会保留完整多阶段报告，不能沿用短笔记的 2 万字上限。 */
       body: TEXT(100000),

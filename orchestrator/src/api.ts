@@ -205,8 +205,8 @@ export function createApiServer(ctx: ServiceContext, opts: { token: string; cook
       // ⚠️ 能拨哪些键由垂类的 `userArgs` 白名单说了算,这里不放宽(见 service.pickUserArgs)。
       if (req.method === "POST" && parts[0] === "page" && parts[1] && parts.length === 2) {
         return await withRequestAbort(req, res, async (signal) => {
-          const b = (await readBody(req)) as { symbol?: string; refresh?: boolean; blockArgs?: Record<string, Record<string, unknown>> };
-          return send(res, 200, await pageQuery(ctx, { query: parts[1], symbol: b?.symbol, refresh: b?.refresh === true, blockArgs: b?.blockArgs, signal }));
+          const b = (await readBody(req)) as { symbol?: string; refresh?: boolean; blockArgs?: Record<string, Record<string, unknown>>; contextArgs?: Record<string, unknown> };
+          return send(res, 200, await pageQuery(ctx, { query: parts[1], symbol: b?.symbol, refresh: b?.refresh === true, blockArgs: b?.blockArgs, contextArgs: b?.contextArgs, signal }));
         });
       }
       // 多空辩论:开一场 → 逐个阶段推进(一次一个,界面据此逐段显示)

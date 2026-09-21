@@ -451,6 +451,9 @@ def ths_hot_reason(result: list, ctx: dict) -> dict:
         note = " ".join(parts)
         if r.get("reason"):
             evs.append(ev(ctx, "strong_stock_reason", str(r["reason"])[:300], "text", date, currency="n/a", record_key=code, note=note))
+        close = to_float(r.get("close"))
+        if close is not None and close > 0:
+            evs.append(ev(ctx, "strong_stock_close", close, "元", date, record_key=code, note=note))
         v = to_float(r.get("zhangfu"))
         if v is not None:
             evs.append(ev(ctx, "strong_stock_change_pct", v, "%", date, currency="n/a", record_key=code, note=note))

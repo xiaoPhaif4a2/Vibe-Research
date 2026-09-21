@@ -52,6 +52,29 @@ test("🔴 页面按名字要数据,端点 id 只活在垂类声明里(界面上
   }
 });
 
+test("指定旧日期会统一改写业务日；当前日专属块只能读归档，不能拿今天冒充", () => {
+  const pc = currentPlugin().pageContext!;
+  const probe = {
+    status: "ok",
+    evidence: [
+      { field: "last_trading_day", value: "2026-08-27" },
+      { field: "previous_trading_day", value: "2026-08-26" },
+      { field: "is_today_trading_day", value: true },
+      { field: "session_phase", value: "post_close" },
+    ],
+  };
+  const resolved = pc.resolve(probe, { date: "2026-08-20" });
+  assert.equal(resolved?.values.review_date, "2026-08-20");
+  assert.equal(resolved?.values.latest_review_date, "2026-08-27");
+  assert.equal(resolved?.values.is_historical, true);
+  assert.equal(resolved?.values.archive_ready, false);
+  assert.deepEqual(resolved?.inject, { date: "2026-08-20", date_compact: "20260820" });
+  const board = currentPlugin().pageQueries?.review?.blocks.find((b) => b.id === "board_flow");
+  assert.equal(board?.historyMode, "archive_only");
+  assert.throws(() => pc.resolve(probe, { date: "2026-02-31" }), /有效/);
+  assert.throws(() => pc.resolve(probe, { date: "2026-08-28" }), /未来/);
+});
+
 test("🔴 声明里引用的端点必须真的存在于注册表(否则整块永远 missing 且只有跑起来才知道)", () => {
   const reg = JSON.parse(fs.readFileSync(path.join(REPO, "datasources", "registry.json"), "utf8")) as { endpoints: { id: string }[] };
   const known = new Set(reg.endpoints.map((e) => e.id));
