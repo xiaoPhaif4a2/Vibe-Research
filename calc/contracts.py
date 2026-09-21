@@ -12,6 +12,7 @@ ARG_KINDS = {
     "forward_cagr": {"eps_t": "number", "eps_t_plus_n": "number", "years": "integer"},
     "growth_rate": {"current": "number", "base": "number", "label": "string"},
     "ratio": {"numerator": "number", "denominator": "number", "label": "string", "unit_in": "string"},
+    "minimum_purchase_batch": {"items": "sequence", "principal": "number", "principal_unit": "string"},
     "peg": {"pe": "number", "cagr": "number"},
     "pe_digestion_years": {"pe": "number", "cagr": "number", "anchor": "number"},
     "pe_digestion_scenarios": {"pe": "number", "cagr": "number"},

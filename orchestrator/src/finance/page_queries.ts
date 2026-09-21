@@ -24,11 +24,21 @@ export const FINANCE_PAGE_CONTEXT: PageContextDef = {
   endpoint: "fetch_trade_calendar",
   // 日历端点要一个主体,但只用来定位市场;给一个稳定的大盘股即可
   symbol: "300308",
+  userArgs: ["date"],
   unavailable: "拿不到交易日历,无法确定该看哪一天 —— 下面的数据可能不是你以为的那一天",
-  resolve: (envelope) => {
+  resolve: (envelope, args) => {
     const facts = calendarFromEnvelope(envelope as never);
     if (!facts) return null;
     const s = resolveSession(facts);
+    const requested = args?.date === undefined ? null : String(args.date);
+    if (requested !== null) {
+      const parsed = new Date(`${requested}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(requested) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== requested) {
+        throw new Error("查看日期必须是有效的 YYYY-MM-DD 日期");
+      }
+      if (requested > s.review_date) throw new Error(`不能查看尚未收盘的未来日期 ${requested}`);
+    }
+    const reviewDate = requested ?? s.review_date;
     /**
      * 同一个"看哪一天",**产出两种写法**,由各块用 `injectAs` 显式挑:
      *   `date`         → `YYYY-MM-DD`(全市场龙虎榜要这个)
@@ -40,8 +50,19 @@ export const FINANCE_PAGE_CONTEXT: PageContextDef = {
      * ⚠️ 哪个端点要哪种,只能真跑一次比证据条数;签名核不出取值写法。
      * ⚠️ 声明了 `injectAs` 就**只注入列出的键** —— 否则多出来的那个会被参数白名单拒掉。
      */
-    const compact = s.review_date ? s.review_date.replace(/-/g, "") : s.review_date;
-    return { values: { ...s }, inject: { date: s.review_date, date_compact: compact } };
+    const compact = reviewDate.replace(/-/g, "");
+    return {
+      values: {
+        ...s,
+        latest_review_date: s.review_date,
+        review_date: reviewDate,
+        review_reason: requested ? "查看指定日期" : s.review_reason,
+        selected_date: requested !== null,
+        is_historical: reviewDate < s.review_date,
+        archive_ready: reviewDate === s.review_date && ["post_close", "closed", "non_trading_day"].includes(s.session_phase),
+      },
+      inject: { date: reviewDate, date_compact: compact },
+    };
   },
 };
 
@@ -63,14 +84,14 @@ export const FINANCE_PAGE_QUERIES: Record<string, PageQueryDef> = {
     intent: "已经收完盘的那一天,场内资金在玩哪些板块",
     // 🔴 盘中打开 → 上一个交易日;盘后 → 今天。由后端解析,不让前端按本地时间猜。
     needsContext: true,
+    archiveContextKey: "review_date",
     blocks: [
       { id: "sentiment", title: "情绪", note: "涨停 / 炸板 / 跌停三个计数", endpoint: "em_limit_up_sentiment", injectContext: true, injectAs: { date_compact: "date" } },
       { id: "reason", title: "强势股原因", note: "同花顺的题材归因:是市场叙事,不是核验过的因果", endpoint: "ths_hot_reason", injectContext: true, injectAs: { date: "date" } },
       { id: "zt_pool", title: "涨停梯队", note: "按连板数排;说明栏是取数层原文(含首封时间)", endpoint: "em_zt_pool", injectContext: true, injectAs: { date_compact: "date" } },
-      // ⚠️ 这个源**只给当日**(period 只有 today / 5d / 10d,没有"指定某一天")——
-      //    所以盘中打开时它是**今天的进行时**,与本页其余几块的业务日期不是同一天。
-      //    如实写在 note 里,别让人以为整页都是同一天(这正是 mixed_ages 要提醒的那类问题)。
-      { id: "board_flow", title: "板块资金流(行业)", note: "主力净额从大到小;全市场口径。⚠️ 此源只给当日:盘中看到的是今天的进行时,不是复盘那一天", endpoint: "em_board_fund_flow", args: BOARD_FLOW_ARGS },
+      // 该源不支持指定历史日。只在页面业务日与当前已收盘交易日一致时抓取，
+      // 旧日期读本地当日快照；没有快照时明确报缺口，不用今天的数据代替。
+      { id: "board_flow", title: "板块资金流(行业)", note: "主力净额从大到小;全市场口径。此源不能回取指定历史日；旧日期只显示当日已保存的快照", endpoint: "em_board_fund_flow", args: BOARD_FLOW_ARGS, historyMode: "archive_only" },
       // ⚠️ 要的是**市场级日榜** `em_daily_dragon_tiger`(symbol_kind=none);
       //    `em_dragon_tiger` 是**单只主体**的上榜记录,需要 symbol,放在这一页会永远缺 symbol 报错。
       //    (我先前正是拿错了那个,把它当成"这一页不该有龙虎榜"给删了 —— 删错了。)

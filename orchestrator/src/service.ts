@@ -18,7 +18,7 @@ import type { AssistantTool, ToolReceipt } from "./assistant_bridge.ts";
 import { FETCH_ENV_KEYS, RUN_ID_RE, stages as packStages, fetchEnv } from "./config.ts";
 import { researchFailure } from "./research_failure.ts";
 import { runAlerts, InsufficientRunsError, type AlertDiff } from "./alerts.ts";
-import { NOFOLLOW_FLAG, nowIso, readJsonIfExists } from "./fsutil.ts";
+import { NOFOLLOW_FLAG, nowIso, readJsonIfExists, writeJson } from "./fsutil.ts";
 import { ChatError, applyGate, chatSend as chatSendCore, llmProbe as llmProbeCore, parseHeadlineTranslationReply, prepareHeadlineTranslation, translateHeadlines as translateHeadlinesCore, type ChatTurnResult, type HeadlineTranslationResult, type LlmProbeResult } from "./chat.ts";
 import { DirectTransportError, chatCompletion } from "./engines/direct_transport.ts";
 import { assertExecutionMode, resolveDirectProvider, resolveRuntimeProvider, resolveSelectedRuntime, runtimeSourceFingerprint, RuntimeProviderError, templateMatrix, type LlmOverride } from "./runtime_provider.ts";
@@ -768,6 +768,8 @@ export interface PageBlockResult {
   /** 取不到时说清是什么问题(界面要显示,不能只留空白) */
   error?: string;
   fetched_at?: string; cached?: boolean;
+  /** 来自按业务日保存的页面快照，而不是本次回取。 */
+  archived?: boolean;
   /**
    * 这一块允许用户改的参数键 + 当前生效值。
    * 🔴 界面**照它渲染选择器**,不自己写死一份可选项 —— 写死的那份迟早与后端对不上,
@@ -814,6 +816,13 @@ function pickUserArgs(b: { userArgs?: readonly string[] }, given: Record<string,
   return out;
 }
 
+function pageHistoryPath(ctx: ServiceContext, pluginId: string, query: string, date: string): string {
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(pluginId) || !/^[a-z][a-z0-9_]{0,31}$/.test(query) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new ServiceError("bad_page_history", "页面历史归档键非法");
+  }
+  return safePath(ctx, "page-history", pluginId, query, `${date}.json`);
+}
+
 /**
  * 信封状态 → 块状态。**"取数调用没抛异常"不等于 ok** ——
  * 取数器可以正常退出却在信封里写 `status:"failed"`(上游改了签名、参数不被接受…)。
@@ -850,7 +859,7 @@ function selectInject(src: Record<string, unknown>, map?: Readonly<Record<string
 
 export async function pageQuery(
   ctx: ServiceContext,
-  req: { query: string; symbol?: string; refresh?: boolean; blockArgs?: Record<string, Record<string, unknown>>; signal?: AbortSignal },
+  req: { query: string; symbol?: string; refresh?: boolean; blockArgs?: Record<string, Record<string, unknown>>; contextArgs?: Record<string, unknown>; signal?: AbortSignal },
 ): Promise<PageResult> {
   const defs = currentPlugin().pageQueries ?? {};
   const name = String(req.query ?? "");
@@ -875,7 +884,8 @@ export async function pageQuery(
       consistency: { mode: "fresh" },
       signal: req.signal,
     });
-    const resolved = ctxDef.resolve(probe.envelope);
+    const contextArgs = pickUserArgs(ctxDef, req.contextArgs);
+    const resolved = ctxDef.resolve(probe.envelope, contextArgs);
     if (resolved) {
       context = resolved.values;
       injected = resolved.inject;
@@ -886,11 +896,21 @@ export async function pageQuery(
     }
   }
 
+  const archiveKey = def.archiveContextKey && context ? String(context[def.archiveContextKey] ?? "") : "";
+  const historyPath = archiveKey ? pageHistoryPath(ctx, currentPlugin().id, name, archiveKey) : null;
+  const archivedPage = historyPath ? readJsonIfExists<PageResult>(historyPath) : null;
+  const useArchiveOnly = context?.archive_ready !== true;
+
   // ② 各块并发取(single-flight 会把指向同一端点的块合并成一次真取数)
   const blocks = await Promise.all(
     def.blocks.map(async (b): Promise<PageBlockResult> => {
       const used = pickUserArgs(b, req.blockArgs?.[b.id]);
       try {
+        if (b.historyMode === "archive_only" && useArchiveOnly) {
+          const saved = archivedPage?.blocks?.find((x) => x.id === b.id && (x.status === "ok" || x.status === "partial"));
+          if (!saved) throw new ServiceError("history_not_archived", `${archiveKey || "该日期"} 的${b.title}没有当日快照，不能用今天的数据代替`);
+          return { ...saved, archived: true, cached: true };
+        }
         /**
          * 🔴 上下文没解析出来(如日历取不到)时,吃上下文的块**不许照常取**:
          *    端点会按自己的默认值(通常是"最近一期")给数,页面上那一屏顶着
@@ -922,11 +942,20 @@ export async function pageQuery(
 
   const times = blocks.map((b) => b.fetched_at).filter((t): t is string => Boolean(t));
   const days = new Set(times.map((t) => t.slice(0, 10)));
-  return {
+  const result: PageResult = {
     query: name, title: def.title, intent: def.intent, context, blocks,
     oldest_fetched_at: times.length ? times.reduce((a, b) => (a < b ? a : b)) : null,
     mixed_ages: days.size > 1,
   };
+  if (historyPath && context?.archive_ready === true) {
+    try {
+      writeJson(historyPath, result);
+    } catch {
+      // 页面主数据已经取得；归档属于次要落盘，失败要出声，但不能把整屏数据一起丢掉。
+      result.context = { ...(result.context ?? {}), archive_error: "当日页面快照保存失败" };
+    }
+  }
+  return result;
 }
 
 export function ledgerKinds(_ctx: ServiceContext): Record<string, { label: string; properties: Record<string, unknown>; required: string[] }> {

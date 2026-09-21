@@ -7,6 +7,7 @@ import { useAiPage } from "../../../core/ai/pageContext";
 import { backend, ApiError, type RunListItem, type ResearchStatus, type AlertDiff } from "@/lib/backend";
 import { ResearchReport } from "../components/ResearchReport";
 import { ResearchRunItem, ResearchFailureNotice } from "../components/ResearchRunItem";
+import { useSearchParams } from "react-router-dom";
 
 /**
  * 「个股研究」—— 六阶段研究引擎的唯一入口。
@@ -48,8 +49,9 @@ const STATUS_CN: Record<string, string> = {
 };
 
 export function Research() {
+  const [searchParams] = useSearchParams();
   const [runs, setRuns] = useState<RunListItem[]>([]);
-  const [symbol, setSymbol] = useState("");
+  const [symbol, setSymbol] = useState(() => /^\d{6}$/.test(searchParams.get("symbol") ?? "") ? searchParams.get("symbol")! : "");
   const [scope, setScope] = useState<"core" | "full">("core");
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);

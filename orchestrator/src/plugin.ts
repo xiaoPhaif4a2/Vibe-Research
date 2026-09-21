@@ -456,6 +456,8 @@ export interface PageBlockDef {
    *    值合不合法仍由 `assertArgs` 判。
    */
   readonly userArgs?: readonly string[];
+  /** 选择过去的业务日期时：fetch = 端点可按日回取；archive_only = 只能读取当时保存的快照。 */
+  readonly historyMode?: "fetch" | "archive_only";
 }
 
 export interface PageQueryDef {
@@ -465,6 +467,8 @@ export interface PageQueryDef {
   readonly blocks: readonly PageBlockDef[];
   /** 这一页要不要先解析业务上下文(见 `Plugin.pageContext`)。true = 要 */
   readonly needsContext?: boolean;
+  /** 用上下文里的哪个日期键保存整屏快照；未声明则不做页面历史归档。 */
+  readonly archiveContextKey?: string;
 }
 
 /**
@@ -483,7 +487,9 @@ export interface PageContextDef {
    * 从取数信封解析。拿不到就返回 null —— **别编一个默认值**:
    * 编出来的业务日期会让整页显示错误的日子,而且看不出来。
    */
-  readonly resolve: (envelope: unknown) => { values: Record<string, unknown>; inject: Record<string, unknown> } | null;
+  readonly resolve: (envelope: unknown, args?: Readonly<Record<string, unknown>>) => { values: Record<string, unknown>; inject: Record<string, unknown> } | null;
+  /** 页面允许传入的上下文参数白名单。 */
+  readonly userArgs?: readonly string[];
   /** 拿不到时给用户看的话 */
   readonly unavailable: string;
 }
@@ -674,7 +680,7 @@ export const PLUGIN_SCHEMA = {
         type: "object", additionalProperties: false,
         required: ["title", "intent", "blocks"],
         properties: {
-          title: NONBLANK, intent: NONBLANK, needsContext: { type: "boolean" },
+          title: NONBLANK, intent: NONBLANK, needsContext: { type: "boolean" }, archiveContextKey: NONBLANK,
           blocks: {
             type: "array", minItems: 1,
             items: {
@@ -687,6 +693,7 @@ export const PLUGIN_SCHEMA = {
                 args: { type: "object" }, required: { type: "boolean" }, injectContext: { type: "boolean" }, collapsed: { type: "boolean" },
                 injectAs: { type: "object", additionalProperties: { type: "string", minLength: 1 }, propertyNames: { minLength: 1 } },
                 userArgs: strArray({ uniqueItems: true }),
+                historyMode: { enum: ["fetch", "archive_only"] },
               },
             },
           },
@@ -1197,9 +1204,13 @@ function register(plugin: Plugin): void {
   // pageContext 里有 resolve 函数,ajv 表达不了 ⇒ 与下面那批一样手查形状
   if (plugin.pageContext !== undefined) {
     const pc = plugin.pageContext;
-    assertNoExtraKeys("pageContext", pc, ["endpoint", "symbol", "resolve", "unavailable"]);
+    assertNoExtraKeys("pageContext", pc, ["endpoint", "symbol", "resolve", "unavailable", "userArgs"]);
     if (!pc.endpoint || typeof pc.endpoint !== "string") throw new Error("Plugin.pageContext.endpoint 必须是非空字符串");
     if (typeof pc.resolve !== "function") throw new Error("Plugin.pageContext.resolve 必须是函数");
+    if (pc.userArgs !== undefined && (!Array.isArray(pc.userArgs) || pc.userArgs.some((x) => typeof x !== "string" || !x))) {
+      throw new Error("Plugin.pageContext.userArgs 必须是非空字符串数组");
+    }
+    if (pc.userArgs && new Set(pc.userArgs).size !== pc.userArgs.length) throw new Error("Plugin.pageContext.userArgs 不得重复");
     if (!pc.unavailable || typeof pc.unavailable !== "string") {
       throw new Error("Plugin.pageContext.unavailable 必须是非空字符串(拿不到上下文时给用户看的话)");
     }
@@ -1214,7 +1225,9 @@ function register(plugin: Plugin): void {
    */
   if (plugin.pageQueries !== undefined) {
     for (const [q, def] of Object.entries(plugin.pageQueries)) {
+      if (def.archiveContextKey && !def.needsContext) throw new Error(`Plugin.pageQueries.${q} 声明归档日期键时必须开启 needsContext`);
       for (const b of def.blocks) {
+        if (b.historyMode === "archive_only" && !def.archiveContextKey) throw new Error(`Plugin.pageQueries.${q} 的块 ${b.id} 只能读历史归档，但页面没有 archiveContextKey`);
         if (!b.injectContext) continue;
         const m = b.injectAs;
         if (!m || typeof m !== "object" || Object.keys(m).length === 0) {
